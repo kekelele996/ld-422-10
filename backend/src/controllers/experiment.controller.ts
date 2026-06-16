@@ -6,7 +6,7 @@ import { rbacMiddleware } from "../middlewares/rbac.middleware.ts";
 export const experimentController = {
   list(query: URLSearchParams) {
     const projectId = query.get("projectId") ?? "";
-    return experimentService.list(projectId, projectId ? "" : query.get("status") ?? "");
+    return experimentService.list(projectId, query.get("status") ?? "");
   },
   create(user: User, body: Record<string, unknown>) {
     const record = experimentService.create(body);

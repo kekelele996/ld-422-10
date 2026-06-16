@@ -5,7 +5,7 @@ import { ApiError } from "../utils/response.ts";
 
 export const reagentService = {
   list(lowOnly = false) {
-    return lowOnly ? reagents.filter((item) => item.stock > item.minStock) : reagents;
+    return lowOnly ? reagents.filter((item) => item.stock < item.minStock) : reagents;
   },
   detail(id: string) {
     const reagent = reagents.find((item) => item.id === id);
