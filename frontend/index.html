@@ -119,14 +119,14 @@
       };
       const badge = (value) => `<span class="badge ${value}">${value}</span>`;
       const currency = (value) => new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 0 }).format(value);
-      let state = { view: "dashboard", dashboard: null, projects: [], experiments: [], reagents: [], usages: [], members: [] };
+      let state = { view: "dashboard", dashboard: null, projects: [], experiments: [], reagents: [], usages: [], members: [], filters: { projectId: "", status: "" } };
 
       async function show(view) {
         state.view = view;
         document.querySelectorAll(".nav").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
         if (view === "dashboard") state.dashboard = await api("/dashboard");
         if (view === "projects") { state.projects = await api("/projects"); state.members = await api("/members"); }
-        if (view === "experiments") { state.experiments = await api("/experiments"); state.projects = await api("/projects"); }
+        if (view === "experiments") { state.projects = await api("/projects"); state.experiments = await api(`/experiments?projectId=${state.filters.projectId}&status=${state.filters.status}`); }
         if (view === "reagents") state.reagents = await api("/reagents");
         if (view === "usages") { state.usages = await api("/reagent-usages"); state.reagents = await api("/reagents"); state.experiments = await api("/experiments"); }
         render();
@@ -148,7 +148,26 @@
           ${table(["项目", "编号", "状态", "经费使用", "成员数"], state.projects.map((x) => [x.name, x.projectNo, badge(x.status), progress(x.usedBudget, x.totalBudget), state.members.filter((m) => m.projectId === x.id).length]))}`;
         }
         if (state.view === "experiments") {
-          app.innerHTML = `<h2>实验记录</h2><div class="toolbar"><button class="action" onclick="createExperiment()">创建记录</button></div>
+          const projectOptions = state.projects.map((p) => `<option value="${p.id}" ${state.filters.projectId === p.id ? "selected" : ""}>${p.name}</option>`).join("");
+          const statusOptions = ["Draft", "Submitted", "Approved", "Rejected", "RevisionRequired"].map((s) => `<option value="${s}" ${state.filters.status === s ? "selected" : ""}>${s}</option>`).join("");
+          app.innerHTML = `<h2>实验记录</h2>
+          <div class="toolbar">
+            <label>所属项目
+              <select id="filterProject">
+                <option value="">全部项目</option>
+                ${projectOptions}
+              </select>
+            </label>
+            <label>审核状态
+              <select id="filterStatus">
+                <option value="">全部状态</option>
+                ${statusOptions}
+              </select>
+            </label>
+            <button class="action" onclick="applyExperimentFilters()">查询</button>
+            <button class="action secondary" onclick="resetExperimentFilters()">重置</button>
+            <button class="action" onclick="createExperiment()">创建记录</button>
+          </div>
           <textarea placeholder="富文本JSON：支持表格、图片、公式等结构化片段"></textarea>
           ${table(["流程", "标题", "项目", "审核状态", "操作"], state.experiments.map((x) => ["撰写 → 提交 → 审核", x.title, projectName(x.projectId), badge(x.reviewStatus), `<button class="action secondary" onclick="submitExperiment('${x.id}')">提交</button> <button class="action warning" onclick="reviewExperiment('${x.id}')">审核通过</button>`]))}`;
         }
@@ -175,12 +194,24 @@
       const reagentName = (id) => state.reagents.find((x) => x.id === id)?.name || id;
       const experimentName = (id) => state.experiments.find((x) => x.id === id)?.title || id;
       async function createProject() { await api("/projects", { method: "POST", body: JSON.stringify({ name: "单细胞数据复核项目", projectNo: "RL-2026-BIO-099", direction: "Biology", totalBudget: 180000 }) }); state.projects = await api("/projects"); render(); }
-      async function createExperiment() { await api("/experiments", { method: "POST", body: JSON.stringify({ projectId: state.projects[0].id, title: "Western Blot 条件摸索", purpose: "优化抗体稀释比例", method: "WB" }) }); state.experiments = await api("/experiments"); render(); }
-      async function submitExperiment(id) { await api(`/experiments/${id}/submit`, { method: "PATCH" }); state.experiments = await api("/experiments"); render(); }
-      async function reviewExperiment(id) { await api(`/experiments/${id}/review`, { method: "PATCH", body: JSON.stringify({ status: "Approved", comment: "记录完整，允许归档" }) }); state.experiments = await api("/experiments"); render(); }
+      async function createExperiment() { await api("/experiments", { method: "POST", body: JSON.stringify({ projectId: state.projects[0].id, title: "Western Blot 条件摸索", purpose: "优化抗体稀释比例", method: "WB" }) }); state.experiments = await api(`/experiments?projectId=${state.filters.projectId}&status=${state.filters.status}`); render(); }
+      async function submitExperiment(id) { await api(`/experiments/${id}/submit`, { method: "PATCH" }); state.experiments = await api(`/experiments?projectId=${state.filters.projectId}&status=${state.filters.status}`); render(); }
+      async function reviewExperiment(id) { await api(`/experiments/${id}/review`, { method: "PATCH", body: JSON.stringify({ status: "Approved", comment: "记录完整，允许归档" }) }); state.experiments = await api(`/experiments?projectId=${state.filters.projectId}&status=${state.filters.status}`); render(); }
       async function createReagent() { await api("/reagents", { method: "POST", body: JSON.stringify({ name: "Tris-HCl", casNo: "1185-53-1", formula: "C4H12ClNO3", stock: 3, minStock: 2, unit: "瓶" }) }); state.reagents = await api("/reagents"); render(); }
       async function stockIn(id) { await api(`/reagents/${id}/stock-in`, { method: "PATCH", body: JSON.stringify({ quantity: 2 }) }); state.reagents = await api("/reagents"); render(); }
       async function createUsage() { await api("/reagent-usages", { method: "POST", body: JSON.stringify({ reagentId: state.reagents[1].id, experimentId: state.experiments[0].id, quantity: 1, purpose: "缓冲液配置" }) }); state.usages = await api("/reagent-usages"); state.reagents = await api("/reagents"); render(); }
+      async function applyExperimentFilters() {
+        state.filters.projectId = document.getElementById("filterProject").value;
+        state.filters.status = document.getElementById("filterStatus").value;
+        state.experiments = await api(`/experiments?projectId=${state.filters.projectId}&status=${state.filters.status}`);
+        render();
+      }
+      async function resetExperimentFilters() {
+        state.filters.projectId = "";
+        state.filters.status = "";
+        state.experiments = await api(`/experiments?projectId=&status=`);
+        render();
+      }
       document.querySelectorAll(".nav").forEach((button) => button.onclick = () => show(button.dataset.view));
       show("dashboard").catch((error) => document.getElementById("app").textContent = error.message);
     </script>
